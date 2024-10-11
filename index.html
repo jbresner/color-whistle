@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whistle to Change Color</title>
+    <style>
+        body {
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: hsl(0, 100%, 50%);
+            transition: background-color 0.3s ease;
+        }
+        h1 {
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <h1>Whistle a Note to Change the Background Color</h1>
+
+    <script>
+        async function startAudioProcessing() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const analyser = audioContext.createAnalyser();
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+                analyser.fftSize = 2048;
+                const dataArray = new Float32Array(analyser.fftSize);
+
+                function autoCorrelate(buffer, sampleRate) {
+                    let SIZE = buffer.length;
+                    let MAX_SAMPLES = Math.floor(SIZE / 2);
+                    let bestOffset = -1;
+                    let bestCorrelation = 0;
+                    let rms = 0;
+
+                    for (let i = 0; i < SIZE; i++) {
+                        rms += buffer[i] * buffer[i];
+                    }
+                    rms = Math.sqrt(rms / SIZE);
+                    if (rms < 0.01) return -1;
+
+                    let lastCorrelation = 1;
+                    for (let offset = 0; offset < MAX_SAMPLES; offset++) {
+                        let correlation = 0;
+
+                        for (let i = 0; i < MAX_SAMPLES; i++) {
+                            correlation += Math.abs((buffer[i]) - (buffer[i + offset]));
+                        }
+                        correlation = 1 - (correlation / MAX_SAMPLES);
+                        if (correlation > 0.9 && correlation > lastCorrelation) {
+                            bestCorrelation = correlation;
+                            bestOffset = offset;
+                        }
+                        lastCorrelation = correlation;
+                    }
+                    if (bestCorrelation > 0.01) {
+                        let frequency = sampleRate / bestOffset;
+                        return frequency;
+                    }
+                    return -1;
+                }
+
+                function updateBackgroundColor(note) {
+                    const noteToHue = {
+                        'C': 0,
+                        'C#': 30,
+                        'D': 60,
+                        'D#': 90,
+                        'E': 120,
+                        'F': 150,
+                        'F#': 180,
+                        'G': 210,
+                        'G#': 240,
+                        'A': 270,
+                        'A#': 300,
+                        'B': 330
+                    };
+                    document.body.style.backgroundColor = `hsl(${noteToHue[note] || 0}, 100%, 50%)`;
+                }
+
+                function getNoteFromFrequency(frequency) {
+                    const noteStrings = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+                    const A4 = 440;
+                    const A4_INDEX = 57;
+                    let noteNumber = 12 * (Math.log(frequency / A4) / Math.log(2));
+                    noteNumber = Math.round(noteNumber) + A4_INDEX;
+                    return noteStrings[noteNumber % 12];
+                }
+
+                function analyzeAudio() {
+                    analyser.getFloatTimeDomainData(dataArray);
+                    const frequency = autoCorrelate(dataArray, audioContext.sampleRate);
+                    if (frequency !== -1) {
+                        const note = getNoteFromFrequency(frequency);
+                        updateBackgroundColor(note);
+                    }
+                    requestAnimationFrame(analyzeAudio);
+                }
+
+                analyzeAudio();
+            } catch (err) {
+                console.error('Error accessing audio input:', err);
+            }
+        }
+
+        window.addEventListener('load', startAudioProcessing);
+    </script>
+</body>
+</html>
